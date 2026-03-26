@@ -59,6 +59,8 @@ def detect_fps(target_path: str) -> float:
 
 def extract_frames(target_path: str) -> None:
     """Extract frames with hardware acceleration and optimized settings."""
+    if is_stream(target_path):
+        return
     temp_directory_path = get_temp_directory_path(target_path)
     
     # Use hardware-accelerated decoding and optimized pixel format
@@ -225,9 +227,11 @@ def get_temp_output_path(target_path: str) -> str:
 
 def normalize_output_path(source_path: str, target_path: str, output_path: str) -> Any:
     if source_path and target_path:
+        if is_stream(target_path):
+            return output_path
         source_name, _ = os.path.splitext(os.path.basename(source_path))
         target_name, target_extension = os.path.splitext(os.path.basename(target_path))
-        if os.path.isdir(output_path):
+        if output_path and os.path.isdir(output_path):
             return os.path.join(
                 output_path, source_name + "-" + target_name + target_extension
             )
@@ -235,6 +239,8 @@ def normalize_output_path(source_path: str, target_path: str, output_path: str) 
 
 
 def create_temp(target_path: str) -> None:
+    if is_stream(target_path):
+        return
     temp_directory_path = get_temp_directory_path(target_path)
     Path(temp_directory_path).mkdir(parents=True, exist_ok=True)
 
@@ -248,6 +254,8 @@ def move_temp(target_path: str, output_path: str) -> None:
 
 
 def clean_temp(target_path: str) -> None:
+    if is_stream(target_path):
+        return
     temp_directory_path = get_temp_directory_path(target_path)
     parent_directory_path = os.path.dirname(temp_directory_path)
     if not modules.globals.keep_frames and os.path.isdir(temp_directory_path):
@@ -271,6 +279,14 @@ def is_video(video_path: str) -> bool:
     if video_path and os.path.isfile(video_path):
         mimetype, _ = mimetypes.guess_type(video_path)
         return bool(mimetype and mimetype.startswith("video/"))
+    if video_path and is_stream(video_path):
+        return True
+    return False
+
+def is_stream(path: str) -> bool:
+    if path and isinstance(path, str):
+        stream_prefixes = ("srt://", "rtmp://", "rtsp://", "http://", "https://", "udp://")
+        return path.lower().startswith(stream_prefixes)
     return False
 
 

@@ -23,7 +23,7 @@ import modules.globals
 import modules.metadata
 import modules.ui as ui
 from modules.processors.frame.core import get_frame_processors_modules
-from modules.utilities import has_image_extension, is_image, is_video, detect_fps, create_video, extract_frames, get_temp_frame_paths, restore_audio, create_temp, move_temp, clean_temp, normalize_output_path
+from modules.utilities import has_image_extension, is_image, is_video, detect_fps, create_video, extract_frames, get_temp_frame_paths, restore_audio, create_temp, move_temp, clean_temp, normalize_output_path, is_stream
 
 if HAS_TORCH and 'ROCMExecutionProvider' in modules.globals.execution_providers:
     del torch
@@ -50,6 +50,7 @@ def parse_args() -> None:
     program.add_argument('--video-encoder', help='adjust output video encoder', dest='video_encoder', default='libx264', choices=['libx264', 'libx265', 'libvpx-vp9'])
     program.add_argument('--video-quality', help='adjust output video quality', dest='video_quality', type=int, default=18, choices=range(52), metavar='[0-51]')
     program.add_argument('-l', '--lang', help='Ui language', default="en")
+    program.add_argument('--stream-output', help='output the processed video frames directly to stdout', dest='stream_output', action='store_true', default=False)
     program.add_argument('--live-mirror', help='The live camera display as you see it in the front-facing camera frame', dest='live_mirror', action='store_true', default=False)
     program.add_argument('--live-resizable', help='The live camera frame is resizable', dest='live_resizable', action='store_true', default=False)
     program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int, default=suggest_max_memory())
@@ -82,6 +83,7 @@ def parse_args() -> None:
     modules.globals.live_mirror = args.live_mirror
     modules.globals.live_resizable = args.live_resizable
     modules.globals.max_memory = args.max_memory
+    modules.globals.stream_output = args.stream_output
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
     modules.globals.lang = args.lang
@@ -185,7 +187,10 @@ def pre_check() -> bool:
 
 
 def update_status(message: str, scope: str = 'DLC.CORE') -> None:
-    print(f'[{scope}] {message}')
+    if modules.globals.stream_output:
+        print(f'[{scope}] {message}', file=sys.stderr)
+    else:
+        print(f'[{scope}] {message}')
     if not modules.globals.headless:
         ui.update_status(message)
 
@@ -219,6 +224,69 @@ def start() -> None:
             update_status('Processing to image failed!')
         return
     
+    # process streaming video
+    if is_stream(modules.globals.target_path):
+        import cv2
+        from modules.face_analyser import get_one_face
+
+        update_status(f'Starting stream processing from {modules.globals.target_path}...')
+        source_image = cv2.imread(modules.globals.source_path)
+        source_face = get_one_face(source_image)
+
+        if source_face is None:
+            update_status('Failed to detect face in source image.', scope='ERROR')
+            return
+
+        cap = cv2.VideoCapture(modules.globals.target_path)
+        if not cap.isOpened():
+            update_status('Failed to open stream.', scope='ERROR')
+            return
+
+        # Prepare frame processors
+        frame_processors_modules = get_frame_processors_modules(modules.globals.frame_processors)
+
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                temp_frame = frame
+                for frame_processor in frame_processors_modules:
+                    if frame_processor.NAME == 'DLC.FACE-SWAPPER':
+                        from modules.face_analyser import get_many_faces
+                        if modules.globals.many_faces:
+                            many = get_many_faces(temp_frame)
+                            if many:
+                                result = temp_frame.copy()
+                                swapped_bboxes = []
+                                for t_face in many:
+                                    result = frame_processor.swap_face(source_face, t_face, result)
+                                    if hasattr(t_face, 'bbox') and t_face.bbox is not None:
+                                        swapped_bboxes.append(t_face.bbox.astype(int))
+                                temp_frame = frame_processor.apply_post_processing(result, swapped_bboxes)
+                        else:
+                            target_face = get_one_face(temp_frame)
+                            if target_face:
+                                temp_frame = frame_processor.swap_face(source_face, target_face, temp_frame)
+                                swapped_bboxes = []
+                                if hasattr(target_face, 'bbox') and target_face.bbox is not None:
+                                    swapped_bboxes.append(target_face.bbox.astype(int))
+                                temp_frame = frame_processor.apply_post_processing(temp_frame, swapped_bboxes)
+                    else:
+                        temp_frame = frame_processor.process_frame(source_face, temp_frame)
+
+                if modules.globals.stream_output:
+                    sys.stdout.buffer.write(temp_frame.tobytes())
+                    sys.stdout.buffer.flush()
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            cap.release()
+            update_status('Stream processing ended.')
+        return
+
     # process image to videos
     if modules.globals.nsfw_filter and ui.check_and_ignore_nsfw(modules.globals.target_path, destroy):
         return
