@@ -237,7 +237,7 @@ def start() -> None:
             update_status('Failed to detect face in source image.', scope='ERROR')
             return
 
-        cap = cv2.VideoCapture(modules.globals.target_path)
+        cap = cv2.VideoCapture(modules.globals.target_path, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             update_status('Failed to open stream.', scope='ERROR')
             return
