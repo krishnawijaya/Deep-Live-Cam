@@ -22,6 +22,7 @@ output_path: str | None = None
 
 # Stream Output Option
 stream_output: bool = False
+stream_input: bool = False
 
 # Processing Options
 frame_processors: List[str] = []

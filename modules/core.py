@@ -51,6 +51,7 @@ def parse_args() -> None:
     program.add_argument('--video-quality', help='adjust output video quality', dest='video_quality', type=int, default=18, choices=range(52), metavar='[0-51]')
     program.add_argument('-l', '--lang', help='Ui language', default="en")
     program.add_argument('--stream-output', help='output the processed video frames directly to stdout', dest='stream_output', action='store_true', default=False)
+    program.add_argument('--stream-input', help='read raw bgr24 1280x720 frames from stdin', dest='stream_input', action='store_true', default=False)
     program.add_argument('--live-mirror', help='The live camera display as you see it in the front-facing camera frame', dest='live_mirror', action='store_true', default=False)
     program.add_argument('--live-resizable', help='The live camera frame is resizable', dest='live_resizable', action='store_true', default=False)
     program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int, default=suggest_max_memory())
@@ -70,7 +71,7 @@ def parse_args() -> None:
     modules.globals.target_path = args.target_path
     modules.globals.output_path = normalize_output_path(modules.globals.source_path, modules.globals.target_path, args.output_path)
     modules.globals.frame_processors = args.frame_processor
-    modules.globals.headless = args.source_path or args.target_path or args.output_path
+    modules.globals.headless = args.source_path or args.target_path or args.output_path or args.stream_input
     modules.globals.keep_fps = args.keep_fps
     modules.globals.keep_audio = args.keep_audio
     modules.globals.keep_frames = args.keep_frames
@@ -84,6 +85,7 @@ def parse_args() -> None:
     modules.globals.live_resizable = args.live_resizable
     modules.globals.max_memory = args.max_memory
     modules.globals.stream_output = args.stream_output
+    modules.globals.stream_input = args.stream_input
     modules.globals.execution_providers = decode_execution_providers(args.execution_provider)
     modules.globals.execution_threads = args.execution_threads
     modules.globals.lang = args.lang
@@ -225,11 +227,12 @@ def start() -> None:
         return
     
     # process streaming video
-    if is_stream(modules.globals.target_path):
+    if modules.globals.stream_input or (modules.globals.target_path and is_stream(modules.globals.target_path)):
         import cv2
+        import numpy as np
         from modules.face_analyser import get_one_face
 
-        update_status(f'Starting stream processing from {modules.globals.target_path}...')
+        update_status('Starting stream processing...')
         source_image = cv2.imread(modules.globals.source_path)
         source_face = get_one_face(source_image)
 
@@ -237,19 +240,28 @@ def start() -> None:
             update_status('Failed to detect face in source image.', scope='ERROR')
             return
 
-        cap = cv2.VideoCapture(modules.globals.target_path, cv2.CAP_FFMPEG)
-        if not cap.isOpened():
-            update_status('Failed to open stream.', scope='ERROR')
-            return
+        cap = None
+        if not modules.globals.stream_input:
+            cap = cv2.VideoCapture(modules.globals.target_path, cv2.CAP_FFMPEG)
+            if not cap.isOpened():
+                update_status('Failed to open stream.', scope='ERROR')
+                return
 
         # Prepare frame processors
         frame_processors_modules = get_frame_processors_modules(modules.globals.frame_processors)
 
         try:
             while True:
-                ret, frame = cap.read()
-                if not ret:
-                    break
+                if modules.globals.stream_input:
+                    # Read the exact number of bytes for one 720p frame from stdin
+                    raw_frame = sys.stdin.buffer.read(1280 * 720 * 3)
+                    if not raw_frame or len(raw_frame) != 1280 * 720 * 3:
+                        break
+                    frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((720, 1280, 3))
+                else:
+                    ret, frame = cap.read()
+                    if not ret:
+                        break
 
                 temp_frame = frame
                 for frame_processor in frame_processors_modules:
@@ -283,7 +295,8 @@ def start() -> None:
         except KeyboardInterrupt:
             pass
         finally:
-            cap.release()
+            if cap is not None:
+                cap.release()
             update_status('Stream processing ended.')
         return
 
