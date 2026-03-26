@@ -189,10 +189,7 @@ def pre_check() -> bool:
 
 
 def update_status(message: str, scope: str = 'DLC.CORE') -> None:
-    if modules.globals.stream_output:
-        print(f'[{scope}] {message}', file=sys.stderr)
-    else:
-        print(f'[{scope}] {message}')
+    print(f'[{scope}] {message}')
     if not modules.globals.headless:
         ui.update_status(message)
 
@@ -289,8 +286,8 @@ def start() -> None:
                         temp_frame = frame_processor.process_frame(source_face, temp_frame)
 
                 if modules.globals.stream_output:
-                    sys.stdout.buffer.write(temp_frame.tobytes())
-                    sys.stdout.buffer.flush()
+                    sys.__stdout__.buffer.write(temp_frame.tobytes())
+                    sys.__stdout__.buffer.flush()
 
         except KeyboardInterrupt:
             pass
