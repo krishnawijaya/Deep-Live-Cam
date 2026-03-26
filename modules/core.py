@@ -51,7 +51,7 @@ def parse_args() -> None:
     program.add_argument('--video-quality', help='adjust output video quality', dest='video_quality', type=int, default=18, choices=range(52), metavar='[0-51]')
     program.add_argument('-l', '--lang', help='Ui language', default="en")
     program.add_argument('--stream-output', help='output the processed video frames directly to stdout', dest='stream_output', action='store_true', default=False)
-    program.add_argument('--stream-input', help='read raw bgr24 1280x720 frames from stdin', dest='stream_input', action='store_true', default=False)
+    program.add_argument('--stream-input', help='read raw bgr24 640x480 frames from stdin', dest='stream_input', action='store_true', default=False)
     program.add_argument('--live-mirror', help='The live camera display as you see it in the front-facing camera frame', dest='live_mirror', action='store_true', default=False)
     program.add_argument('--live-resizable', help='The live camera frame is resizable', dest='live_resizable', action='store_true', default=False)
     program.add_argument('--max-memory', help='maximum amount of RAM in GB', dest='max_memory', type=int, default=suggest_max_memory())
@@ -253,11 +253,11 @@ def start() -> None:
         try:
             while True:
                 if modules.globals.stream_input:
-                    # Read the exact number of bytes for one 720p frame from stdin
-                    raw_frame = sys.stdin.buffer.read(1280 * 720 * 3)
-                    if not raw_frame or len(raw_frame) != 1280 * 720 * 3:
+                    # Read the exact number of bytes for one 480p frame from stdin
+                    raw_frame = sys.stdin.buffer.read(640 * 480 * 3)
+                    if not raw_frame or len(raw_frame) != 640 * 480 * 3:
                         break
-                    frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((720, 1280, 3))
+                    frame = np.frombuffer(raw_frame, dtype=np.uint8).reshape((480, 640, 3))
                 else:
                     ret, frame = cap.read()
                     if not ret:
