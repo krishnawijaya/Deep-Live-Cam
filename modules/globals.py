@@ -20,6 +20,10 @@ source_path: str | None = None
 target_path: str | None = None
 output_path: str | None = None
 
+# Stream Output Option
+stream_output: bool = False
+stream_input: bool = False
+
 # Processing Options
 frame_processors: List[str] = []
 keep_fps: bool = True
